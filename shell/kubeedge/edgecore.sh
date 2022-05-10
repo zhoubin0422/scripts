@@ -1,6 +1,6 @@
 #!/bin/bash                                                                                                                                                                                               
-# @Author: zhoubin<bin.zhou@vonechain.com>
-# @Email: bin.zhou@vonechain.com
+# @Author: zhoubin<2350686113@qq.com>
+# @Email: 2350686113@qq.com
 # @Date: 2022-04-29
 # @Last modified by: zhoubin
 # @Last modified by time: 2022-04-29
@@ -217,12 +217,12 @@ fi
 # 检查系统位数
 if [ "$(getconf WORD_BIT)" == "32" ] && [ "$(getconf LONG_BIT)" == "64" ]; then
   OS_BIT=64
-  SYS_BIT_j=x64    #jdk
-  SYS_BIT_a=x86_64 #mariadb
-  SYS_BIT_b=x86_64 #mariadb
-  SYS_BIT_c=x86_64 #ZendGuardLoader
-  SYS_BIT_d=x86-64 #ioncube
-  SYS_BIT_n=x64 #node
+  SYS_BIT_j=x64
+  SYS_BIT_a=x86_64
+  SYS_BIT_b=x86_64
+  SYS_BIT_c=x86_64
+  SYS_BIT_d=x86-64
+  SYS_BIT_n=x64
   [ "${TARGET_ARCH}" == 'aarch64' ] && { SYS_BIT_j=aarch64; SYS_BIT_c=aarch64; SYS_BIT_d=aarch64; SYS_BIT_n=arm64; }
 else
   OS_BIT=32
@@ -675,5 +675,5 @@ if [[ -z $TOKEN || -z $CloudCoreIP || -z $CloudCorePort ]]; then
     exit 0
 else
     echo -e "\033[1;33mTOKEN: $TOKEN, CloudCoreIP: $CloudCoreIP, CloudCorePort: $CloudCorePort\033[0m"
-    #main
+    main
 fi
