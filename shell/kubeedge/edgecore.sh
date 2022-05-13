@@ -1,9 +1,9 @@
 #!/bin/bash                                                                                                                                                                                               
-# @Author: zhoubin<2350686113@qq.com>
-# @Email: 2350686113@qq.com
+# @Author: zhoubin<bin.zhou@vonechain.com>
+# @Email: bin.zhou@vonechain.com
 # @Date: 2022-04-29
 # @Last modified by: zhoubin
-# @Last modified by time: 2022-04-29
+# @Last modified by time: 2022-05-13
 # @Descriptions: Edgecore 服务安装脚本
 
 # shellcheck disable=SC2129
@@ -11,7 +11,7 @@
 export PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin
 
 # 脚本相关信息
-__ScriptVersion="2022.04.29"
+__ScriptVersion="2022.05.13"
 __ScriptName="edgecore.sh"
 __ScriptFullName="$0"
 __ScriptArgs="$#"
@@ -19,16 +19,16 @@ __ScriptArgs="$#"
 BS_TRUE=0
 BS_FALSE=1
 
-# keadm 加入集群的参数
+# FTP 服务信息
 FTP_SERVER=${FTP_SERVER:-ftp.59izt.com}
 FTP_USERNAME=${FTP_USERNAME:-'username'}
-FTP_PASSWD=${FTP_PASSWD:-'passwd'}
+FTP_PASSWD=${FTP_PASSWD:-'password'}
 
-TOKEN=$1
-
+# keadm 加入集群的参数
 KubeEdgeVersion=${KubeEdgeVersion:-1.9.2}
 CloudCoreIP=${CloudCoreIP:-1.1.1.1}
 CloudCorePort=${CloudCorePort:-10000}
+HARBOR_ADDRESS=${HARBOR_ADDRESS:-'http://2.2.2.2'}
 
 # whoami alternative for SunOS
 if [ -f /usr/xpg4/bin/id ]; then
@@ -42,6 +42,23 @@ if [ "$($whoami)" != "root" ]; then
     echoerror "Edgecore requires root privileges to install. Please re-run this script as root."
     exit 1
 fi
+
+# 检查参数
+GETOPT_ARGS=$(getopt -o i::p::t: -al token:,CloudCoreIP::,CloudCorePort:: -n $(basename $0) -- "$@")
+[ $? -ne 0 ] && exit 1
+
+eval set -- "$GETOPT_ARGS"
+
+while [ -n "$1" ]
+do
+    case "$1" in
+        -t|--token) TOKEN=$2; shift 2;;
+        -i|--CloudCoreIP) CloudCoreIP=$2; shift 2;;
+        -p|--CloudCorePort) CloudCorePort=$2; shift 2;;
+        --) break ;;
+        *) show_usage; break ;;
+    esac
+done
 
 # 配置控制台颜色支持
 #---  FUNCTION  -------------------------------------------------------------------------------------------------------
@@ -126,37 +143,6 @@ exec 1>"$LOGPIPE"
 exec 2>&-
 exec 2>"$LOGPIPE"
 
-# 检查系统软件包管理工具
-if [ -e "/usr/bin/yum" ]; then
-  PM=yum
-  if [ -e /etc/yum.repos.d/CentOS-Base.repo ] && grep -Eqi "release 6." /etc/redhat-release; then
-    sed -i "s@centos/\$releasever@centos-vault/6.10@g" /etc/yum.repos.d/CentOS-Base.repo
-    sed -i 's@centos/RPM-GPG@centos-vault/RPM-GPG@g' /etc/yum.repos.d/CentOS-Base.repo
-    [ -e /etc/yum.repos.d/epel.repo ] && rm -f /etc/yum.repos.d/epel.repo
-  fi
-  if ! command -v lsb_release >/dev/null 2>&1; then
-    if [ -e "/etc/euleros-release" ]; then
-      yum -y install euleros-lsb
-    elif [ -e "/etc/openEuler-release" -o -e "/etc/openeuler-release" ]; then
-      if [ -n "$(grep -w '"20.03"' /etc/os-release)" ]; then
-        rpm -Uvh https://repo.openeuler.org/openEuler-20.03-LTS-SP1/everything/aarch64/Packages/openeuler-lsb-5.0-1.oe1.aarch64.rpm
-      else
-        yum -y install openeuler-lsb
-      fi
-    else
-      yum -y install redhat-lsb-core
-    fi
-    clear
-  fi
-fi
-
-if [ -e "/usr/bin/apt-get" ]; then
-  PM=apt-get
-  command -v lsb_release >/dev/null 2>&1 || { apt-get -y update > /dev/null; apt-get -y install lsb-release; clear; }
-fi
-
-command -v lsb_release >/dev/null 2>&1 || { echoerror "source failed!"; kill -9 $$; }
-
 # 获取系统类型
 OS=$(lsb_release -is)
 if [[ "${OS}" =~ ^CentOS$|^CentOSStream$|^RedHat$|^Rocky$|^Fedora$|^Amazon$|^AlibabaCloud\(AliyunLinux\)$|^EulerOS$|^openEuler$ ]]; then
@@ -191,9 +177,36 @@ if [ ${CentOS_ver} -lt 6 >/dev/null 2>&1 ] || [ ${Debian_ver} -lt 8 >/dev/null 2
   kill -9 $$
 fi
 
-# 检查 gcc库信息
-command -v gcc > /dev/null 2>&1 || $PM -y install gcc
-gcc_ver=$(gcc -dumpversion | awk -F. '{print $1}')
+# 检查系统软件包管理工具
+if [ -e "/usr/bin/yum" ]; then
+  PM=yum
+  if [ -e /etc/yum.repos.d/CentOS-Base.repo ] && grep -Eqi "release 6." /etc/redhat-release; then
+    sed -i "s@centos/\$releasever@centos-vault/6.10@g" /etc/yum.repos.d/CentOS-Base.repo
+    sed -i 's@centos/RPM-GPG@centos-vault/RPM-GPG@g' /etc/yum.repos.d/CentOS-Base.repo
+    [ -e /etc/yum.repos.d/epel.repo ] && rm -f /etc/yum.repos.d/epel.repo
+  fi
+  if ! command -v lsb_release >/dev/null 2>&1; then
+    if [ -e "/etc/euleros-release" ]; then
+      yum -y install euleros-lsb
+    elif [ -e "/etc/openEuler-release" -o -e "/etc/openeuler-release" ]; then
+      if [ -n "$(grep -w '"20.03"' /etc/os-release)" ]; then
+        rpm -Uvh https://repo.openeuler.org/openEuler-20.03-LTS-SP1/everything/aarch64/Packages/openeuler-lsb-5.0-1.oe1.aarch64.rpm
+      else
+        yum -y install openeuler-lsb
+      fi
+    else
+      yum -y install redhat-lsb-core
+    fi
+    clear
+  fi
+fi
+
+if [ -e "/usr/bin/apt-get" ]; then
+  PM=apt-get
+  command -v lsb_release >/dev/null 2>&1 || { apt-get -y update > /dev/null; apt-get -y install lsb-release; clear; }
+fi
+
+command -v lsb_release >/dev/null 2>&1 || { echoerror "source failed!"; kill -9 $$; }
 
 # 检查系统架构
 if uname -m | grep -Eqi "arm|aarch64"; then
@@ -217,59 +230,18 @@ fi
 # 检查系统位数
 if [ "$(getconf WORD_BIT)" == "32" ] && [ "$(getconf LONG_BIT)" == "64" ]; then
   OS_BIT=64
-  SYS_BIT_j=x64
-  SYS_BIT_a=x86_64
-  SYS_BIT_b=x86_64
-  SYS_BIT_c=x86_64
-  SYS_BIT_d=x86-64
-  SYS_BIT_n=x64
-  [ "${TARGET_ARCH}" == 'aarch64' ] && { SYS_BIT_j=aarch64; SYS_BIT_c=aarch64; SYS_BIT_d=aarch64; SYS_BIT_n=arm64; }
 else
   OS_BIT=32
-  SYS_BIT_j=i586
-  SYS_BIT_a=x86
-  SYS_BIT_b=i686
-  SYS_BIT_c=i386
-  SYS_BIT_d=x86
-  SYS_BIT_n=x86
-  [ "${TARGET_ARCH}" == 'armv7' ] && { SYS_BIT_j=arm32-vfp-hflt; SYS_BIT_c=armhf; SYS_BIT_d=armv7l; SYS_BIT_n=armv7l; }
 fi
 
-# CPU 线程数
+# 检查 CPU 线程数
 THREAD=$(grep 'processor' /proc/cpuinfo | sort -u | wc -l)
 
-
 #---  FUNCTION  -------------------------------------------------------------------------------------------------------
-#          NAME:  __yum_install_noinput
-#   DESCRIPTION:  (DRY) yum install with noinput options
-#----------------------------------------------------------------------------------------------------------------------
-__yum_install_noinput(){
-    for package in "${@}"; do
-        echoinfo "正在安装软件 ${package} ..."
-        yum install -y "${package}" || return $?
-
-        [[ $? -ne $BS_TRUE ]] && echoerror "${package} 安装失败！" || echoinfo "${package} 安装完成."
-    done
-}
-
-#---  FUNCTION  -------------------------------------------------------------------------------------------------------
-#          NAME:  __install_noinput
-#   DESCRIPTION:  (DRY) install with noinput options
-#----------------------------------------------------------------------------------------------------------------------
-__install_noinput(){
-    for package in "${@}"; do
-        echoinfo "正在安装软件 ${package} ..."
-        $PM install -y "${package}" || return $?
-
-        [[ $? -ne $BS_TRUE ]] && echoerror "${package} 安装失败！" || echoinfo "${package} 安装完成."
-    done
-}
-
-#---  FUNCTION  -------------------------------------------------------------------------------------------------------
-#          NAME:  __modify_repo_mirror
+#          NAME:  __configure_repo_mirror
 #   DESCRIPTION:  修改软件管理仓库镜像源
 #----------------------------------------------------------------------------------------------------------------------
-__modify_repo_mirror(){
+__configure_repo_mirror(){
     if [[ $LikeOS == "CentOS" ]];then
         echoinfo "开始配置 YUM 镜像源..."
         mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.backup
@@ -291,29 +263,48 @@ __modify_repo_mirror(){
 }
 
 #---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __check_gcc
+#   DESCRIPTION:  检查 gcc 信息
+#----------------------------------------------------------------------------------------------------------------------
+__check_gcc(){
+    echoinfo "检查 gcc 信息..."
+    command -v gcc > /dev/null 2>&1 || $PM -y install gcc
+    gcc_ver=$(gcc -dumpversion | awk -F. '{print $1}')
+}
+
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __install_noinput
+#   DESCRIPTION:  (DRY) install with noinput options
+#----------------------------------------------------------------------------------------------------------------------
+__install_noinput(){
+    for package in "${@}"; do
+        echoinfo "正在安装软件 ${package} ..."
+        $PM install -y "${package}" || return $?
+
+        [[ $? -ne $BS_TRUE ]] && echoerror "${package} 安装失败！" || echoinfo "${package} 安装完成."
+    done
+}
+
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
 #          NAME:  __install_base_software
 #   DESCRIPTION:  安装常用的基础软件
 #----------------------------------------------------------------------------------------------------------------------
 __install_base_software(){
     if [[ $LikeOS == "CentOS" ]];then
         echoinfo "正在安装常用的软件..."
-        __install_noinput net-tools vim wget lrzsz tree telnet bash-completion epel-release ntpdate || return 1
+        __install_noinput net-tools vim wget jq net-tools lrzsz tree telnet bash-completion epel-release ntpdate || return 1
     elif [[ $LikeOS == "Ubuntu" ]];then
         echoinfo "正在安装常用的软件..."
-        __install_noinput net-tools vim wget lrzsz tree telnet bash-completion ntpdate || return 1
+        __install_noinput net-tools vim wget jq net-tools lrzsz tree telnet bash-completion ntpdate || return 1
     else
         echoerror "未知系统类型!!"
     fi
 }
 
-
-# 安装常用的软件
-__yum_install_base() {
-    echoinfo "正在安装常用的软件..."
-    __yum_install_noinput net-tools vim wget lrzsz tree telnet bash-completion epel-release ntpdate || return 1
-}
-
-# 关闭 firewalld 防火墙
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __disable_firewalld
+#   DESCRIPTION:  关闭 firewalld
+#----------------------------------------------------------------------------------------------------------------------
 __disable_firewalld(){
     if [[ $LikeOS == "CentOS" ]];then
         echoinfo "正在关闭防火墙..." 
@@ -328,21 +319,31 @@ __disable_firewalld(){
     fi
 }
 
-# 禁用 Selinux
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __disable_selinux
+#   DESCRIPTION:  关闭 Selinux
+#----------------------------------------------------------------------------------------------------------------------
 __disable_selinux(){
-    echoinfo "开始配置 Selinux..."
-    SELINUX_STATUS=`getenforce`
-    if [[ ${SELINUX_STATUS} =~ "^Disabled" ]];then
-        echoinfo "SeLinux 已经是关闭状态."
+    if [[ -f /etc/selinux/config ]];then
+        echoinfo "开始配置 Selinux..."
+        SELINUX_STATUS=`getenforce`
+        if [[ ${SELINUX_STATUS} =~ "^Disabled" ]];then
+            echoinfo "SeLinux 已经是关闭状态."
+        else
+            echoinfo "正在关闭 SeLinux..."
+            setenforce 0 >/dev/null 2>&1
+            sed -i 's/SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config || return 1
+            [[ $? -ne $BS_TRUE ]] && echoerror "SeLinux 关闭失败!" || echoinfo "SELINUX 关闭成功."
+        fi
     else
-        echoinfo "正在关闭 SeLinux..."
-        setenforce 0 >/dev/null 2>&1
-        sed -i 's/SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config || return 1
-        [[ $? -ne $BS_TRUE ]] && echoerror "SeLinux 关闭失败!" || echoinfo "SELINUX 关闭成功."
+        echoinfo '系统未安装 Selinux.'
     fi
 }
 
-# 关闭交换分区
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __disable_swap
+#   DESCRIPTION:  关闭 Swap
+#----------------------------------------------------------------------------------------------------------------------
 __disable_swap(){
     echoinfo "开始配置关闭 swap..."
     swapoff -a && sysctl -w vm.swappiness=0 > /dev/null 2>&1
@@ -350,8 +351,11 @@ __disable_swap(){
     echoinfo "swap 分区已禁用."
 }
 
-# 配置系统时区以及时间同步
-__setting_tz_and_time_sync(){
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __configure_tz_and_time_sync
+#   DESCRIPTION:  配置系统时区以及时间同步
+#----------------------------------------------------------------------------------------------------------------------
+__configure_tz_and_time_sync(){
     echoinfo "开始配置系统时区以及时间同步..."
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
     echo 'Asia/Shanghai' > /etc/timezone
@@ -361,61 +365,69 @@ __setting_tz_and_time_sync(){
     echoinfo "系统时区以及时间同步配置完成."
 }
 
-# 配置 yum 镜像源
-__modify_yum_repo(){
-    echoinfo "开始配置 YUM 仓库镜像..."
-    mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.backup
-    wget -O /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
-    wget -O /etc/yum.repos.d/epel.repo http://mirrors.aliyun.com/repo/epel-7.repo
-    wget -O /etc/yum.repos.d/CentOS7-Base-163.repo http://mirrors.163.com/.help/CentOS7-Base-163.repo
-
-    yum clean all && yum makecache || return 1
-
-    [[ $? -ne $BS_TRUE ]] && echoerror "YUM repo 修改失败!" || echoinfo "YUM repo 已修改完成."
-}
-
 # 配置 PS1 样式
-__modify_ps_style(){
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __configure_ps_style
+#   DESCRIPTION:  配置 PS1 样式
+#----------------------------------------------------------------------------------------------------------------------
+__configure_ps_style(){
     echoinfo "开始配置 PS1 样式..."
     echo "export PS1='\[\e[37;40m\][\[\e[32;40m\]\u\[\e[37;40m\]@\[\e[33;40m\]\h \[\e[35;40m\]\W\[\e[0m\]]\\$ '" >>/etc/profile
     echoinfo "PS1 样式修改完成."
 }
 
-# 配置历史命令记录格式
-__modify_history_format(){
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __configure_history_format
+#   DESCRIPTION:  配置历史命令记录格式
+#----------------------------------------------------------------------------------------------------------------------
+__configure_history_format(){
     echoinfo "开始修改历史命令记录格式..."
     echo "export HISTTIMEFORMAT=\"%Y-%m-%d %H:%M:%S  \$(whoami)  \"" >> /etc/profile
     echo "export PROMPT_COMMAND='{ msg=\$(history 1 | { read x y; echo \$y; }); logger \"[euid=\$(whoami)]\":\$(who am i):[\$(pwd)]\"\$msg\";}'" >> /etc/profile
     echoinfo "命令历史记录格式配置完成."
 }
 
-# 配置会话超时时间
-__modify_session_timeout(){
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __configure_session_timeout
+#   DESCRIPTION:  配置会话超时时间
+#----------------------------------------------------------------------------------------------------------------------
+__configure_session_timeout(){
     echoinfo "开始配置会话超时时间..."
     echo "export TMOUT=1800" >> /etc/profile
     echoinfo "回话超时时间已设置为 10 分钟."
 }
 
-# 修改文件描述符限制
-__modify_limit(){
-    echoinfo "开始配置文件 ulimit 限制..."
-    ulimit -SHn 65535
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __configure_limits
+#   DESCRIPTION:  修改描述符限制
+#----------------------------------------------------------------------------------------------------------------------
+__configure_limits(){
+echoinfo "开始配置文件 ulimit 限制..."
+ulimit -SHn 65535
+cp /etc/security/limits.conf /etc/security/limits.conf.bak
 
-    sed -i '/^# End/i\* soft nofile    655350' /etc/security/limits.conf
-    sed -i '/^# End/i\* hard nofile    131072' /etc/security/limits.conf
-    sed -i '/^# End/i\* soft nproc    655350' /etc/security/limits.conf
-    sed -i '/^# End/i\* hard nproc    655350' /etc/security/limits.conf
-    sed -i '/^# End/i\* soft memlock   unlimited' /etc/security/limits.conf
-    sed -i '/^# End/i\* hard memlock   unlimited' /etc/security/limits.conf
-    echoinfo "ulimit 限制配置完成."
+cat << EOF > /etc/security/limits.conf
+* soft nofile 655360
+* hard nofile 131072
+* soft nproc 655350
+* hard nproc 655350
+* soft memlock unlimited
+* hard memlock unlimited
+
+root soft memlock unlimited
+root hard memlock unlimited
+
+EOF
+echoinfo "ulimit 限制配置完成."
 }
 
-# 配置 ipvs 模块
-__config_ipvs_modules(){
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __configure_ipvs_modules
+#   DESCRIPTION:  配置 ipvs 模块参数
+#----------------------------------------------------------------------------------------------------------------------
+__configure_ipvs_modules(){
 echoinfo "安装 ipvs,ipset,sysstat,conntrack 等依赖软件..."
-__yum_install_noinput ipvsadm ipset sysstat conntrack libseccomp jq psmisc || return 1
-
-echo
+__install_noinput ipvsadm ipset sysstat conntrack libseccomp psmisc || return 1
 
 echoinfo "开始配置 ipvs 模块..."
 cat > /etc/sysconfig/modules/ipvs.modules <<EOF
@@ -450,8 +462,11 @@ bash /etc/sysconfig/modules/ipvs.modules && lsmod |grep -e ip_vs -e nf_conntrack
 echoinfo "ipvs 模块配置完成."
 }
 
-# 配置内核参数
-__config_kernels(){
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __configure_kernels
+#   DESCRIPTION:  配置内核参数
+#----------------------------------------------------------------------------------------------------------------------
+__configure_kernels(){
 echoinfo "开始配置内核参数..."
 cat >/etc/sysctl.d/k8s.conf <<EOF
 net.ipv4.ip_forward = 1
@@ -479,26 +494,66 @@ net.ipv4.tcp_max_syn_backlog = 16384
 net.ipv4.tcp_timestamps = 0
 net.core.somaxconn = 16384
 EOF
-sysctl --system 
+
+sysctl --system
+
 echoinfo "内核参数配置完成."
 }
 
-# 安装以及配置 Docker
-__install_docker(){
-echoinfo "开始安装 Docker 程序依赖软件..."
-__yum_install_noinput yum-utils device-mapper-persistent-data lvm2 git
-echoinfo "添加 Docker 仓库..."
-yum-config-manager --add-repo https://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
-sed -i 's/$releasever/7/g' /etc/yum.repos.d/docker-ce.repo
-yum makecache fast
-echoinfo "安装指定版本 Docker(19.03.x)..."
-__yum_install_noinput docker-ce-19.03.*
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __install_docker_yum
+#   DESCRIPTION:  CentOS 系统安装 Docker 方法
+#----------------------------------------------------------------------------------------------------------------------
+__install_docker_yum(){
+    echoinfo "开始安装 Docker 程序依赖软件..."
+    __install_noinput yum-utils device-mapper-persistent-data lvm2 git
+    
+    echoinfo "添加 Docker 仓库..."
+    yum-config-manager --add-repo https://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
+    sed -i 's/$releasever/7/g' /etc/yum.repos.d/docker-ce.repo
+    yum makecache fast
+    
+    echoinfo "安装指定版本 Docker(19.03.x)..."
+    __install_noinput docker-ce-19.03.*
+}
+
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __install_docker_apt
+#   DESCRIPTION:  Ubuntu 系统安装 Docker 方法
+#----------------------------------------------------------------------------------------------------------------------
+__install_docker_apt(){
+    echoinfo "卸载旧版本的 Docker"
+    sudo $PM remove -y docker docker-engine docker.io containerd runc
+
+    echoinfo "开始安装 Docker 程序依赖软件..."
+    __install_noinput apt-transport-https ca-certificates software-properties-common gnupg lsb-release
+    
+    echoinfo "添加 Docker 仓库..."
+    curl -fsSL http://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | sudo apt-key add -
+    add-apt-repository "deb [arch=amd64] http://mirrors.aliyun.com/docker-ce/linux/ubuntu $(lsb_release -cs) stable"
+    DOCKER_VERSION="5:19.03.15~3-0~ubuntu-$(lsb_release -cs)"
+    echoinfo "安装指定版本 Docker(5:19.03.15~3-0~ubuntu-bionic)..."
+    __install_noinput docker-ce=${DOCKER_VERSION}
+}
+
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __configure_docker
+#   DESCRIPTION:  配置 Docker 服务
+#----------------------------------------------------------------------------------------------------------------------
+__configure_docker(){
+if [[ $LikeOS == "CentOS" ]];then
+    __install_docker_yum
+elif [[ $LikeOS == "Ubuntu" ]];then
+    __install_docker_apt
+else
+    echoerror '未知系统类型!'
+fi
 
 if [[ $? -ne $BS_TRUE ]];then
     echoerror "Docker 安装失败! 请检查 Docker Repo 仓库配置或网络是否正常!"
 else
     echoinfo "Docker 安装完成，正在配置 Docker."
-    mkdir /etc/docker
+    [[ ! -d /etc/docker ]] && mkdir -p /etc/docker || echo "/etc/docker 目录已存在!"
     cat > /etc/docker/daemon.json << EOF
 {
   "exec-opts": ["native.cgroupdriver=systemd"],
@@ -508,7 +563,7 @@ else
     "http://hub-mirror.c.163.com",
     "https://docker.mirrors.ustc.edu.cn"
   ],
-  "insecure-registries": ["http://10.1.40.14"],
+  "insecure-registries": ["${HARBOR_ADDRESS}"],
   "max-concurrent-downloads": 10,
   "max-concurrent-uploads": 5,
   "log-opts": {
@@ -518,12 +573,15 @@ else
   "live-restore": true
 }
 EOF
-echoinfo "启动 Docker 并配置开机启动"
-systemctl enable --now docker.service
+    echoinfo "启动 Docker 并配置开机启动"
+    systemctl enable --now docker.service && systemctl restart docker.service
 fi
 }
 
-# 安装 keadm
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __install_keadm
+#   DESCRIPTION:  安装 keadm 工具
+#----------------------------------------------------------------------------------------------------------------------
 __install_keadm(){
     echoinfo "开始安装 keadm"
 
@@ -540,10 +598,12 @@ __install_keadm(){
     else
         echoerror "keadm 压缩包文件不存在，请检查是否下载文件到本地"
     fi
-    
 }
 
-# 安装 yaml文件配置工具 yq
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __install_yq
+#   DESCRIPTION:  安装 yaml文件配置工具 yq
+#----------------------------------------------------------------------------------------------------------------------
 __install_yq(){
     echoinfo "开始安装 yq"
     echoinfo "*Setup1: 下载 yq 安装包"
@@ -558,9 +618,12 @@ __install_yq(){
     else
         echoerror "yq_linux_amd64.tar.gz 文件不存在！"
     fi
-}
+} 
 
-# 安装 kubeedge
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  __install_edgecore
+#   DESCRIPTION:  安装 edgecore
+#----------------------------------------------------------------------------------------------------------------------
 __install_edgecore(){
     echoinfo "开始安装 EdgeCore..."
 
@@ -570,7 +633,6 @@ __install_edgecore(){
     [[ ! -d "/etc/kubeedge" ]] && mkdir -p /etc/kubeedge/ || echo "/etc/kubeedge 已存在"
 
     echoinfo "开始下载 kubeedge 相关的文件"
-
     echoinfo "Setupr1: 下载 kubeedge checksum_文件..."
     curl -s --basic \
         -u ${FTP_USERNAME}:${FTP_PASSWD} \
@@ -606,68 +668,50 @@ __install_edgecore(){
     yq -i '.modules.metaManager.metaServer.enable = true' /etc/kubeedge/config/edgecore.yaml
     
     echoinfo "配置完成，正在重启 edgecore..."
-    cp -v /etc/kubeedge/edgecore.service /usr/lib/systemd/system/ && systemctl enable edgecore.service
+    cp -v /etc/kubeedge/edgecore.service /lib/systemd/system/ && systemctl enable edgecore.service
     systemctl restart edgecore
     ps aux |grep edgecore |grep -v 'grep' > /dev/null 2>&1
     [[ $? -eq $BS_TRUE ]] && echoinfo "edgecore 配置完成." || echoerror "edgecore 配置失败!"
 }
 
-# 程序入口
-main(){
-    if [[ $LikeOS == 'CentOS' ]];then
-        #__yum_install_base
-        __modify_repo_mirror
-        __install_base_software
-        __disable_firewalld
-        __disable_selinux
-        __disable_swap
-        __setting_tz_and_time_sync
-        #__modify_yum_repo
-        __modify_ps_style
-        __modify_history_format
-        __modify_session_timeout
-        __modify_limit
-        __config_ipvs_modules
-        __config_kernels
-        __install_docker
-        __install_keadm
-        __install_yq
-        __install_edgecore
-    elif [[ $LikeOS == 'Ubuntu' ]];then
-        __modify_repo_mirror
-        __install_base_software
-    else
-        echoerror "未知系统类型!!"
-    fi
-    echo -e "\033[1;33m详细执行日志信息请查看: $LOGFILE，查看方式: more $LOGFILE\033[0m"
-}
-
-# 说明
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  show_usage
+#   DESCRIPTION:  脚本使用方法
+#----------------------------------------------------------------------------------------------------------------------
 show_usage(){
     echo "Usage: $__ScriptFullName -t {TOKEN} [-i {CloudCoreIP}] [-p {CloudCorePort}]"
     echo ""
     echo "参数说明:"
     echo "-t, --token: kubeedge 集群获取的 token (必须参数), 获取方式 keadm gettoken"
-    echo "-i, --CloudCoreIP: kubeedge 集群对外暴露的IP (可选参数)，默认值为: 1.1.1.1"
+    echo "-i, --CloudCoreIP: kubeedge 集群对外暴露的IP (可选参数)，默认值为: 8.130.21.172"
     echo "-p, --CloudCorePort: kubeedge 集群对外暴露的端口 (可选参数)，默认值为 10000"
     echo ""
 }
 
-GETOPT_ARGS=$(getopt -o i::p::t: -l token:,CloudCoreIP::,CloudCorePort:: -n $(basename $0) -- "$@")
-
-eval set -- "$GETOPT_ARGS"
-
-#获取参数
-while [ -n "$1" ]
-do
-    case "$1" in
-        -t|--token) TOKEN=$2; shift 2;;
-        -i|--CloudCoreIP) CloudCoreIP=$2; shift 2;;
-        -p|--CloudCorePort) CloudCorePort=$2; shift 2;;
-        --) break ;;
-        *) show_usage; break ;;
-    esac
-done
+#---  FUNCTION  -------------------------------------------------------------------------------------------------------
+#          NAME:  main
+#   DESCRIPTION:  脚本主入口
+#----------------------------------------------------------------------------------------------------------------------
+main(){
+    __configure_repo_mirror
+    __check_gcc
+    __install_base_software
+    __disable_firewalld
+    __disable_selinux
+    __disable_swap
+    __configure_tz_and_time_sync
+    __configure_ps_style
+    __configure_history_format
+    __configure_session_timeout
+    __configure_limits
+    __configure_ipvs_modules
+    __configure_kernels
+    __configure_docker
+    __install_keadm
+    __install_yq
+    __install_edgecore
+    echo -e "\033[1;33m详细执行日志信息请查看: $LOGFILE，查看方式: more $LOGFILE\033[0m"
+}
 
 #对必填项做输入检查，此处假设都为必填项
 if [[ -z $TOKEN || -z $CloudCoreIP || -z $CloudCorePort ]]; then
